@@ -72,13 +72,15 @@ public class ChatServer implements ServerSocketObserver {
 	}
 
 	public void broadCast(String message) {
-		users.forEach(user -> {
+		Iterator<ChatUser> userIt = users.iterator();
+		while (userIt.hasNext()) {
+			ChatUser user = userIt.next();
 			if (!user.getClientConnection().isTerminated()) {
 				user.getClientConnection().sendMessage(message);
 			} else {
-				removeUser(user);
+				userIt.remove();
 			}
-		});
+		}
 		log.log(Level.CONFIG, "broadcasted message: \"" + message + "\"");
 	}
 

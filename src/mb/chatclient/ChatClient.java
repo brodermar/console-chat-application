@@ -1,9 +1,9 @@
 package mb.chatclient;
 
-import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import mb.exceptions.ConnectionError;
 import mb.sockethandling.ClientConnection;
 import mb.sockethandling.ClientConnectionHandler;
 
@@ -39,7 +39,7 @@ public class ChatClient implements ClientConnectionHandler {
 	}
 
 	@Override
-	public void onIOException(IOException exception) {
+	public void onError(ConnectionError exception) {
 		log.log(Level.SEVERE, "received unexpected exception from connection handler", exception);
 	}
 

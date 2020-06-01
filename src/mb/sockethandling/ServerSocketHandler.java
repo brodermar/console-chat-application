@@ -47,9 +47,8 @@ public class ServerSocketHandler implements Runnable {
 						obs.onNewConnection(new SocketHandler(socket));
 					} catch (IOException e) {
 						log.log(Level.SEVERE, "failed to create socket handler for socket " + socket, e);
-						Thread.currentThread().interrupt();
-					} finally {
 						socket.close();
+						Thread.currentThread().interrupt();
 					}
 				} catch (SocketTimeoutException e) {
 					log.log(Level.FINE, "expected timeout exception was thrown", e);

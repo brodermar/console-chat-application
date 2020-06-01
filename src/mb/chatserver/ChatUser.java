@@ -1,9 +1,9 @@
 package mb.chatserver;
 
-import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import mb.exceptions.ConnectionError;
 import mb.sockethandling.ClientConnection;
 import mb.sockethandling.ClientConnectionHandler;
 
@@ -36,15 +36,13 @@ public class ChatUser implements ClientConnectionHandler {
 	}
 
 	@Override
-	public void onIOException(IOException exception) {
-		clientConnection.terminate();
+	public void onError(ConnectionError exception) {
 		chatServer.removeUser(this);
 		log.log(Level.WARNING, "the user has encountered an unexpected exception", exception);
 	}
 
 	@Override
 	public void onCompleted() {
-		clientConnection.terminate();
 		chatServer.removeUser(this);
 		log.info("the user connection finished");
 	}

@@ -1,12 +1,15 @@
 package mb.sockethandling;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import mb.exceptions.ConnectionError;
 
 public class SocketHandler implements ClientConnection {
 
@@ -19,24 +22,21 @@ public class SocketHandler implements ClientConnection {
 	private boolean closed;
 	private Socket socket;
 	private BufferedReader in;
-	private PrintWriter out;
+	private BufferedWriter out;
 
 	public static SocketHandler newSocketHandler(String ip, int port) {
-		Socket socket = null;
 		try {
-			socket = new Socket(ip, port);
-			return new SocketHandler(socket);
+			Socket socket = new Socket(ip, port);
+			try {
+				return new SocketHandler(socket);
+			} catch (IOException e) {
+				log.log(Level.WARNING, "failed to instantiate socket handler for socket " + socket);
+				socket.close();
+				throw new IllegalArgumentException(e);
+			}
 		} catch (IOException e) {
 			log.log(Level.WARNING, "couldn't create socket for " + ip + ":" + port, e);
 			throw new IllegalArgumentException(e);
-		} finally {
-			if (socket != null) {
-				try {
-					socket.close();
-				} catch (IOException e) {
-					log.log(Level.FINE, "exception throw during close", e);
-				}
-			}
 		}
 	}
 
@@ -47,7 +47,7 @@ public class SocketHandler implements ClientConnection {
 		}
 		this.socket = socket;
 		try {
-			this.out = new PrintWriter(socket.getOutputStream());
+			this.out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 			this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 		} catch (IOException e) {
 			try {
@@ -79,7 +79,7 @@ public class SocketHandler implements ClientConnection {
 			try (
 
 					BufferedReader i = in;
-					PrintWriter o = out;
+					BufferedWriter o = out;
 					Socket s = socket;
 
 			) {
@@ -89,18 +89,22 @@ public class SocketHandler implements ClientConnection {
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
+			closed = true;
 			log.info("closed socket handler for connection to " + socket.getInetAddress() + ":" + socket.getPort());
 		}
 	}
 
 	@Override
 	public void run() {
-		log.info("started input stream handling for connection to " + socket.getInetAddress() + ":" + socket.getPort());
 		if (!isConnected()) {
-			throw new IllegalArgumentException("the connection is not connected to a connection handler");
+			throw new IllegalStateException("the connection is not connected to a connection handler");
 		}
+		if (isClosed()) {
+			throw new IllegalStateException("the connection was already closed");
+		}
+		log.info("started input stream handling for connection to " + socket.getInetAddress() + ":" + socket.getPort());
 		try {
-			while (!Thread.currentThread().isInterrupted()) {
+			while (!Thread.currentThread().isInterrupted() && !isClosed()) {
 				if (in.ready()) {
 					String message = in.readLine();
 					if (message != null) {
@@ -119,15 +123,15 @@ public class SocketHandler implements ClientConnection {
 			}
 		} catch (IOException e) {
 			if (!isClosed()) {
-				clientConnectionHandler.onIOException(e);
+				try {
+					close();
+				} catch (IOException e1) {
+					log.log(Level.FINE, "exception on close was thrown", e1);
+				}
+				clientConnectionHandler.onError(new ConnectionError(
+						"exception on buffered reader was thrown, connection was closed as a result", e));
 			} else {
-				log.log(Level.CONFIG, "exception on input stream was thrown, but handler was already closed", e);
-			}
-		} finally {
-			try {
-				close();
-			} catch (IOException e) {
-				log.log(Level.FINE, "exception on close was thrown", e);
+				log.log(Level.CONFIG, "exception on input stream was thrown, but connection was already closed", e);
 			}
 		}
 		log.info(
@@ -139,16 +143,22 @@ public class SocketHandler implements ClientConnection {
 		if (!isConnected()) {
 			throw new IllegalArgumentException("the connection is not connected to a connection handler");
 		} else if (isClosed()) {
-			clientConnectionHandler.onIOException(new IOException("the connection was already closed"));
+			clientConnectionHandler.onError(new ConnectionError("connection was already closed"));
 		} else {
-			out.println(message);
-			if (out.checkError()) {
+			try {
+				synchronized (out) {
+					out.write(message);
+					out.newLine();
+					out.flush();
+				}
+			} catch (IOException e) {
 				try {
 					close();
-				} catch (IOException e) {
-					log.log(Level.FINE, "exception on close was thrown", e);
+				} catch (IOException e1) {
+					log.log(Level.FINE, "exception on close was thrown", e1);
 				}
-				clientConnectionHandler.onIOException(new IOException("error on outputstream detected"));
+				clientConnectionHandler.onError(
+						new ConnectionError("exception on buffered writer was thrown, connection was closed", e));
 			}
 		}
 	}
